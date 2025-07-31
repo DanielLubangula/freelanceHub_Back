@@ -109,6 +109,5 @@ paymentSchema.index({ taskId: 1 });
 paymentSchema.index({ status: 1, createdAt: -1 });
 paymentSchema.index({ payerId: 1, createdAt: -1 });
 paymentSchema.index({ payeeId: 1, createdAt: -1 });
-paymentSchema.index({ transactionRef: 1 });
 
 module.exports = mongoose.model('Payment', paymentSchema); 

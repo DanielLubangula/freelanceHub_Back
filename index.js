@@ -1,20 +1,19 @@
 // server.js
 const express = require('express');
 const dotenv = require('dotenv');
+dotenv.config(); // Charger les variables d'environnement en premier
+
 const cors = require('cors');
 const path = require('path');
 const http = require('http');
 const session = require('express-session');
 const passport = require('./config/passport');
-const { initializeSocket } = require('./socket'); // Import du socket
-
-dotenv.config();  
+const { initializeSocket } = require('./socket'); // Import du socket  
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
-
 // Configuration des sessions pour Passport
 app.use(session({
   secret: process.env.JWT_SECRET || 'your-secret-key',
