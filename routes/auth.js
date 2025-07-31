@@ -313,10 +313,25 @@ router.get('/google/callback', (req, res, next) => {
   if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
     return res.redirect(`${process.env.FRONTEND_URL}/auth/error?message=Authentification Google non configurée`);
   }
-  passport.authenticate('google', { session: false })(req, res, next);
+  passport.authenticate('google', { session: false }, (err, user, info) => {
+    if (err) {
+      console.error('Erreur d\'authentification Google:', err);
+      return res.redirect(`${process.env.FRONTEND_URL}/auth/error?message=${encodeURIComponent(err.message || 'Erreur lors de l\'authentification')}`);
+    }
+    if (!user) {
+      return res.redirect(`${process.env.FRONTEND_URL}/auth/error?message=Authentification échouée`);
+    }
+    req.user = user;
+    next();
+  })(req, res, next);
 }, async (req, res) => {
     try {
       const { user, isNewUser } = req.user;
+      
+      // Vérifier que l'utilisateur a les champs requis
+      if (!user || !user._id || !user.name || !user.role || !user.email) {
+        throw new Error('Données utilisateur incomplètes');
+      }
       
       // Générer le token JWT
       const token = generateToken(user._id);
@@ -325,13 +340,14 @@ router.get('/google/callback', (req, res, next) => {
       const userResponse = user.toPublicJSON();
       
       // Rediriger vers le frontend avec les données
-      const redirectUrl = `${process.env.FRONTEND_URL}/auth/callback?token=${token}&isNewUser=${isNewUser}&user=${encodeURIComponent(JSON.stringify(userResponse))}`;
+      const userData = encodeURIComponent(JSON.stringify(userResponse));
+      const redirectUrl = `${process.env.FRONTEND_URL}/?token=${token}&isNewUser=${isNewUser}&user=${userData}`;
       
       res.redirect(redirectUrl);
       
     } catch (error) {
       console.error('Erreur lors du callback Google:', error);
-      res.redirect(`${process.env.FRONTEND_URL}/auth/error?message=Erreur lors de l'authentification`);
+      res.redirect(`${process.env.FRONTEND_URL}/auth/error?message=${encodeURIComponent(error.message || 'Erreur lors de l\'authentification')}`);
     }
   }
 );
@@ -376,6 +392,83 @@ router.post('/google/success', async (req, res) => {
     res.status(401).json({
       success: false,
       message: 'Token invalide'
+    });
+  }
+});
+
+// @route   POST /api/auth/complete-profile
+// @desc    Compléter le profil après authentification Google
+// @access  Private
+router.post('/complete-profile', authenticateToken, async (req, res) => {
+  try {
+    const { 
+      role, 
+      // Champs communs
+      location, 
+      phone,
+      // Champs agent
+      bio, 
+      skills, 
+      paymentMethod, 
+      paymentNumber,
+      // Champs entreprise
+      companyName, 
+      sector, 
+      description, 
+      website 
+    } = req.body;
+    
+    if (!role || !['agent', 'enterprise'].includes(role)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Rôle valide requis (agent ou enterprise)'
+      });
+    }
+    
+    const user = await User.findById(req.user._id);
+    
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'Utilisateur non trouvé'
+      });
+    }
+    
+    // Mettre à jour le rôle
+    user.role = role;
+    
+    // Champs communs
+    if (location !== undefined) user.location = location;
+    if (phone !== undefined) user.phone = phone;
+    
+    // Champs spécifiques selon le rôle
+    if (role === 'enterprise') {
+      if (companyName !== undefined) user.companyName = companyName;
+      if (sector !== undefined) user.sector = sector;
+      if (description !== undefined) user.description = description;
+      if (website !== undefined) user.website = website;
+    } else if (role === 'agent') {
+      if (bio !== undefined) user.bio = bio;
+      if (skills !== undefined) user.skills = skills;
+      if (paymentMethod !== undefined) user.paymentMethod = paymentMethod;
+      if (paymentNumber !== undefined) user.paymentNumber = paymentNumber;
+    }
+    
+    await user.save();
+    
+    res.json({
+      success: true,
+      message: 'Profil complété avec succès',
+      data: {
+        user: user.toPublicJSON()
+      }
+    });
+    
+  } catch (error) {
+    console.error('Erreur lors de la complétion du profil:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erreur lors de la complétion du profil'
     });
   }
 });

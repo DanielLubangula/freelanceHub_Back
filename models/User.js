@@ -33,7 +33,9 @@ const userSchema = new mongoose.Schema({
   role: {
     type: String,
     enum: ['agent', 'enterprise', 'admin'],
-    required: true
+    required: function() {
+      return !this.googleId || this.isModified('role');
+    }
   },
   avatar: {
     type: String,
