@@ -328,8 +328,8 @@ router.get('/google/callback', (req, res, next) => {
     try {
       const { user, isNewUser } = req.user;
       
-      // Vérifier que l'utilisateur a les champs requis
-      if (!user || !user._id || !user.name || !user.role || !user.email) {
+      // Vérifier que l'utilisateur a les champs requis de base
+      if (!user || !user._id || !user.name || !user.email) {
         throw new Error('Données utilisateur incomplètes');
       }
       

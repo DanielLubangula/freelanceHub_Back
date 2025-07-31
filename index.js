@@ -80,7 +80,7 @@ app.use('/api/notifications', notificationRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/ratings', ratingRoutes);
 
-// Route de test
+// Route de test  
 app.get('/test', (req, res) => {
   res.json({ 
     success: true,
