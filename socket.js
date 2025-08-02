@@ -1,41 +1,76 @@
-const { Server } = require("socket.io");
-const fs = require("fs");
-const path = require("path");
-const jwt = require("jsonwebtoken");
+const { Server } = require('socket.io');
+const jwt = require('jsonwebtoken');
+const User = require('./models/User');
 
 let io;
-const onlineUsers = new Map();
+const connectedUsers = new Map();
 
-// Initialisation de Socket.io
 const initializeSocket = (server) => {
   io = new Server(server, {
     cors: {
-      origin: "*",
-      methods: ["GET", "POST"],
-    },
-  });
-
-  io.use((socket, next) => {
-    const token = socket.handshake.auth.token;
-    if (!token) return next(new Error("Token manquant"));
-
-    try {
-      const decoded = jwt.verify(token, process.env.JWT_SECRET);
-      socket.userId = decoded.id;
-      next();
-    } catch (err) {
-      next(new Error("Token invalide"));
+      origin: "http://localhost:5173",
+      methods: ["GET", "POST"]
     }
   });
 
-  io.on("connection", async (socket) => {
-    console.log("Nouvelle connexion:", socket.id, "User:", socket.userId);
+  // Middleware d'authentification pour Socket.io
+  io.use(async (socket, next) => {
+    try {
+      const token = socket.handshake.auth.token;
+      if (!token) {
+        return next(new Error('Token manquant'));
+      }
 
-   
+      const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
+      const user = await User.findById(decoded.userId).select('-password');
+      
+      if (!user) {
+        return next(new Error('Utilisateur non trouvé'));
+      }
+
+      socket.userId = user._id.toString();
+      socket.user = user;
+      next();
+    } catch (error) {
+      next(new Error('Token invalide'));
+    }
   });
+
+  io.on('connection', (socket) => {
+    console.log(`Utilisateur connecté: ${socket.user.name} (${socket.userId})`);
+    
+    // Stocker la connexion
+    connectedUsers.set(socket.userId, socket.id);
+
+    // Rejoindre une room personnelle
+    socket.join(`user_${socket.userId}`);
+
+    socket.on('disconnect', () => {
+      console.log(`Utilisateur déconnecté: ${socket.user.name}`);
+      connectedUsers.delete(socket.userId);
+    });
+  });
+
+  return io;
 };
 
-const getSocketInstance = () => io;
-const getOnlineUsers = () => onlineUsers;
+// Fonction pour envoyer une notification à un utilisateur spécifique
+const sendNotificationToUser = (userId, notification) => {
+  if (io) {
+    io.to(`user_${userId}`).emit('newNotification', notification);
+  }
+};
 
-module.exports = { initializeSocket, getSocketInstance, getOnlineUsers };
+// Fonction pour mettre à jour le compteur de notifications
+const updateNotificationCount = (userId, count) => {
+  if (io) {
+    io.to(`user_${userId}`).emit('notificationCountUpdate', count);
+  }
+};
+
+module.exports = {
+  initializeSocket,
+  sendNotificationToUser,
+  updateNotificationCount,
+  getIO: () => io
+};

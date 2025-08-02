@@ -1,9 +1,9 @@
 const express = require('express');
 const Application = require('../models/Application');
 const Task = require('../models/Task');
-const Notification = require('../models/Notification');
 const { authenticateToken, authorizeRoles } = require('../middlewares/auth');
 const { uploadMultiple, handleUploadError } = require('../middlewares/upload');
+const { createNotification } = require('../utils/notifications');
 
 const router = express.Router();
 
@@ -85,15 +85,16 @@ router.post('/', authenticateToken, authorizeRoles('agent'), uploadMultiple, han
     });
 
     // Créer une notification pour l'entreprise
-    const notification = new Notification({
-      userId: task.createdBy,
-      title: 'Nouvelle candidature',
-      message: `${req.user.name} a postulé pour votre tâche "${task.title}"`,
-      type: 'info',
-      relatedTaskId: taskId,
-      relatedApplicationId: application._id
-    });
-    await notification.save();
+    await createNotification(
+      task.createdBy,
+      'Nouvelle candidature',
+      `${req.user.name} a postulé pour votre tâche "${task.title}"`,
+      'info',
+      {
+        taskId: taskId,
+        applicationId: application._id
+      }
+    );
 
     // Populate les données
     await application.populate('agentId', 'name email avatar rating skills');
@@ -333,15 +334,16 @@ router.put('/:id/status', authenticateToken, async (req, res) => {
       ? `Votre candidature pour "${application.taskId.title}" a été acceptée !`
       : `Votre candidature pour "${application.taskId.title}" a été rejetée.`;
 
-    const notification = new Notification({
-      userId: application.agentId._id,
-      title: status === 'accepted' ? 'Candidature acceptée' : 'Candidature rejetée',
-      message: notificationMessage,
-      type: status === 'accepted' ? 'success' : 'info',
-      relatedTaskId: application.taskId._id,
-      relatedApplicationId: application._id
-    });
-    await notification.save();
+    await createNotification(
+      application.agentId._id,
+      status === 'accepted' ? 'Candidature acceptée' : 'Candidature rejetée',
+      notificationMessage,
+      status === 'accepted' ? 'success' : 'warning',
+      {
+        taskId: application.taskId._id,
+        applicationId: application._id
+      }
+    );
 
     res.json({
       success: true,

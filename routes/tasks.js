@@ -179,16 +179,6 @@ router.post('/', authenticateToken, authorizeRoles('enterprise'), uploadSingle, 
       { $inc: { postedTasks: 1 } }
     );
 
-    // Créer une notification
-    const notification = new Notification({
-      userId: req.user._id,
-      title: 'Tâche publiée',
-      message: `Votre tâche "${title}" a été publiée avec succès`,
-      type: 'success',
-      relatedTaskId: task._id
-    });
-    await notification.save();
-
     // Populate les données de l'utilisateur
     await task.populate('createdBy', 'name email avatar companyName');
 
@@ -353,15 +343,21 @@ router.put('/:id', authenticateToken, authorizeTaskAccess, uploadSingle, handleU
 
     // Traiter les champs spéciaux
     if (updateData.skills) {
-      updateData.skills = updateData.skills.split(',').map(skill => skill.trim());
+      updateData.skills = Array.isArray(updateData.skills) 
+        ? updateData.skills 
+        : updateData.skills.split(',').map(skill => skill.trim());
     }
 
     if (updateData.requiredProofs) {
-      updateData.requiredProofs = updateData.requiredProofs.split(',').map(proof => proof.trim());
+      updateData.requiredProofs = Array.isArray(updateData.requiredProofs)
+        ? updateData.requiredProofs
+        : updateData.requiredProofs.split(',').map(proof => proof.trim());
     }
 
     if (updateData.tags) {
-      updateData.tags = updateData.tags.split(',').map(tag => tag.trim());
+      updateData.tags = Array.isArray(updateData.tags)
+        ? updateData.tags
+        : updateData.tags.split(',').map(tag => tag.trim());
     }
 
     if (updateData.deadline) {
@@ -417,8 +413,8 @@ router.delete('/:id', authenticateToken, authorizeTaskAccess, async (req, res) =
       });
     }
 
-    // Vérifier si la tâche peut être supprimée
-    if (task.status !== 'open' && task.status !== 'cancelled') {
+    // Vérifier si la tâche peut être supprimée (seulement pour les non-propriétaires)
+    if (!isOwner && task.status !== 'open' && task.status !== 'cancelled') {
       return res.status(400).json({
         success: false,
         message: 'Impossible de supprimer une tâche en cours ou terminée'

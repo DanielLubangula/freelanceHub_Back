@@ -127,6 +127,10 @@ router.put('/read-all', authenticateToken, async (req, res) => {
       { read: true, readAt: new Date() }
     );
 
+    // Mettre à jour le compteur en temps réel
+    const { updateNotificationCount } = require('../socket');
+    updateNotificationCount(req.user._id.toString(), 0);
+
     res.json({
       success: true,
       message: 'Toutes les notifications ont été marquées comme lues'
@@ -163,10 +167,20 @@ router.put('/:id/read', authenticateToken, async (req, res) => {
       });
     }
 
-    // Marquer comme lue
-    notification.read = true;
-    notification.readAt = new Date();
-    await notification.save();
+    // Marquer comme lue seulement si pas déjà lue
+    if (!notification.read) {
+      notification.read = true;
+      notification.readAt = new Date();
+      await notification.save();
+
+      // Mettre à jour le compteur en temps réel
+      const { updateNotificationCount } = require('../socket');
+      const unreadCount = await Notification.countDocuments({
+        userId: req.user._id,
+        read: false
+      });
+      updateNotificationCount(req.user._id.toString(), unreadCount);
+    }
 
     res.json({
       success: true,
@@ -179,6 +193,53 @@ router.put('/:id/read', authenticateToken, async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Erreur lors de la mise à jour de la notification'
+    });
+  }
+});
+
+// @route   DELETE /api/notifications/all
+// @desc    Supprimer toutes les notifications de l'utilisateur
+// @access  Private
+router.delete('/all', authenticateToken, async (req, res) => {
+  try {
+    const { type, read } = req.query;
+
+    // Construire le filtre
+    const filter = { userId: req.user._id };
+
+    if (type) {
+      filter.type = type;
+    }
+
+    if (read !== undefined) {
+      filter.read = read === 'true';
+    }
+
+    const result = await Notification.deleteMany(filter);
+
+    // Mettre à jour le compteur en temps réel
+    try {
+      const { updateNotificationCount } = require('../socket');
+      const unreadCount = await Notification.countDocuments({
+        userId: req.user._id,
+        read: false
+      });
+      updateNotificationCount(req.user._id.toString(), unreadCount);
+    } catch (socketError) {
+      console.error('Erreur lors de la mise à jour du compteur via socket:', socketError);
+      // Ne pas faire échouer la requête si le socket échoue
+    }
+
+    res.json({
+      success: true,
+      message: `${result.deletedCount} notification(s) supprimée(s) avec succès`
+    });
+
+  } catch (error) {
+    console.error('Erreur lors de la suppression des notifications:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erreur lors de la suppression des notifications'
     });
   }
 });
@@ -205,7 +266,18 @@ router.delete('/:id', authenticateToken, async (req, res) => {
       });
     }
 
+    const wasUnread = !notification.read;
     await Notification.findByIdAndDelete(req.params.id);
+
+    // Mettre à jour le compteur en temps réel si la notification était non lue
+    if (wasUnread) {
+      const { updateNotificationCount } = require('../socket');
+      const unreadCount = await Notification.countDocuments({
+        userId: req.user._id,
+        read: false
+      });
+      updateNotificationCount(req.user._id.toString(), unreadCount);
+    }
 
     res.json({
       success: true,
@@ -217,40 +289,6 @@ router.delete('/:id', authenticateToken, async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Erreur lors de la suppression de la notification'
-    });
-  }
-});
-
-// @route   DELETE /api/notifications
-// @desc    Supprimer toutes les notifications de l'utilisateur
-// @access  Private
-router.delete('/', authenticateToken, async (req, res) => {
-  try {
-    const { type, read } = req.query;
-
-    // Construire le filtre
-    const filter = { userId: req.user._id };
-
-    if (type) {
-      filter.type = type;
-    }
-
-    if (read !== undefined) {
-      filter.read = read === 'true';
-    }
-
-    await Notification.deleteMany(filter);
-
-    res.json({
-      success: true,
-      message: 'Notifications supprimées avec succès'
-    });
-
-  } catch (error) {
-    console.error('Erreur lors de la suppression des notifications:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Erreur lors de la suppression des notifications'
     });
   }
 });
